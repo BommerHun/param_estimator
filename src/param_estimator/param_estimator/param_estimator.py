@@ -5,9 +5,11 @@ import rclpy
 import numpy as np
 import matplotlib.pyplot as plt
 import time
-
+import os
+import csv
 
 l = 0.168 + 0.163 #distance of wheelbase
+log_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), "logs/") #global variable for the directory of the log files
 
 
 class Listener(Node):
@@ -94,7 +96,6 @@ class Listener(Node):
 
 
 
-
 def servo_interpolate(data):
 
     n_points = np.shape(data[0,:])[0]
@@ -126,24 +127,40 @@ def servo_interpolate(data):
 
     return k1, k0
 
+def create_csv_writer():
+    log_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), "logs/")
+    if not os.path.exists(log_dir):
+        os.mkdir(log_dir)
+
+    for i in range(1000):
+        if os.path.exists(os.path.join(log_dir, f"log_file{i}.csv")) == False:
+            file_name = os.path.join(log_dir, f"log_file{i}.csv")
+            break
+    file = open(file=file_name, mode='w', newline='')
+   
+    writer = csv.writer(file)
+    field = ['servo_input', 'delta']
+    writer.writerow(field)
+
+
+    return writer, file
 
 
 
 def main():
     print('Hi from param_estimator.')
     rclpy.init()
+    csv_writer, csv_file = create_csv_writer()
     listener = Listener()
-
-    delta_ref = 0
-
     data = np.array([])
 
+    delta_ref = 0
 
     command = input()
 
     while(command != "exit"):
         if command == "help":
-            print("Available commands:\nrun-start data collection\nset_duration-set duration of data collection\nset_delta- set value of delta ref[-0.5:0.5]\ninterpolate-interpolate data\nexit-exit")
+            print("Available commands:\nrun- start data collection\nset_duration- set duration of data collection\nset_delta- set value of delta ref[-0.5:0.5]\ninterpolate- interpolate data\nload_log- load previously saved log data\nsave- save current data\nlist_log- list available log files\nexit- exit")
         elif command == "run":
             try:
                 listener.clear_data()
@@ -172,6 +189,45 @@ def main():
             k1,k0 = servo_interpolate(data)
 
             print(f"k1: {k1}\t k0: {k0}")
+        elif command == "save":
+            for i in range(np.shape(data)[1]):
+                csv_writer.writerow([data[0][i], data[1][i]])
+            if not np.shape(data)[1] == 0:
+                csv_file.close   
+                csv_writer, csv_file = create_csv_writer()
+            else:
+                print("No data has been written")
+        elif command == "list_log":
+            for file_name in os.listdir(log_dir):
+                print(f"{file_name}")
+        elif "load_log" in command:
+            file_name = input("Enter name of the log file:\t")
+            new_data = np.zeros((2,1))
+            if file_name == "cancel":
+                continue
+            
+            try:
+                with open(os.path.join(log_dir,file_name), 'r',newline='') as file:
+                        reader = csv.DictReader(file)
+                        for row in reader:
+                            temp = np.array([float(row['servo_input']), float(row["delta"])])
+                            temp = np.reshape(temp, (-1,1))
+                            new_data = np.append(new_data, temp, axis= 1)
+                        new_data = new_data[:,1:]
+            except Exception as e:
+                print(f"error{str(e)}")
+                continue
+            
+            
+            if '-o' in command or np.shape(data)[0] == 0:
+                data = new_data
+
+            elif '-a' in command:
+                data = np.append(data,new_data, axis = 1)
+                pass
+            else:
+                print("enter -a or -o")
+
         else:
             print("help-show help")
 
