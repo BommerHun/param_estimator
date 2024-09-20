@@ -38,7 +38,6 @@ class Listener(Node):
             "delta": float(msg.delta),
             "erpm": float(msg.erpm)
         }
-
         state_vector = np.array([state["x"], state["y"], state["phi"], state["v_xi"],
         state["v_eta"], state["omega"], state["d"], state["delta"]])
 
@@ -108,7 +107,7 @@ def servo_interpolate(data):
     
 
     for i in range(n_points):
-        dist_squared = (k_1*data[0,i] + k_0-data[1,i])**2
+        dist_squared = (k_1*data[1,i] + k_0-data[0,i])**2
         objective = objective + dist_squared
 
     opt_vars = cs.vertcat(k_1, k_0)
@@ -180,7 +179,7 @@ def main():
         elif command == "set_duration":
             listener.duration = float(input("Enter duration:\t"))
         elif command == "set_delta":
-            delta_ref = float(input("Enter delta reference:\t"))+0.5
+            delta_ref = float(input("Enter delta reference:\t"))
         elif command == "plot_data":
             plt.plot(data[0,:], data[1,:], 'o')
             print(data)
