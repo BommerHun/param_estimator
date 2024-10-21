@@ -1,4 +1,5 @@
 from vehicle_state_msgs.msg import VehicleStateStamped
+from drive_bridge_msg.msg import InputValues
 from rclpy.node import Node
 import casadi as cs
 import rclpy
@@ -14,15 +15,20 @@ class Listener(Node):
     def __init__(self):
         super().__init__("Listener")
         self.listener = self.create_subscription(VehicleStateStamped, '/JoeBush1_state',self.callback, 0 )
+        self.d_listener = self.create_subscription(InputValues, '/JoeBush1_control',self.d_callback, 0 )
         self.data = np.array([[]])
         self.start_time = time.time()
         self.duration = 3
         self.dt = 1/30
         self.m = 3
+        self.d = 0.15
 
     def clear_data(self):
         self.data = None
+        self.d = 0
 
+    def d_callback(self, msg):
+        self.d = float(msg.d)
     def callback(self, msg):
 
         state = {
@@ -36,10 +42,10 @@ class Listener(Node):
             "delta": float(msg.delta),
             "erpm": float(msg.erpm)
         }
-        print(state)
         state_vector = np.array([state["x"], state["y"], state["phi"], state["v_xi"],
         state["v_eta"], state["omega"], state["d"], state["delta"]])
 
+        state_vector[6] = self.d
         state_vector = np.reshape(state_vector, (-1,1))
         try:
             self.data = np.append(self.data, state_vector, axis = 1)
@@ -71,7 +77,7 @@ class Listener(Node):
         sim_y = np.array([y_data[0]])
 
         for i in range(n_points-1):
-            new_y = sim_y[-1] + (2/self.m*(C_m1*self.data[6,i]-C_m2*self.data[3,:]-cs.sign(self.data[3,:])*C_m3))*self.dt
+            new_y = sim_y[-1] + (2/self.m*(C_m1*x_data[i]-C_m2*sim_y[-1] -cs.sign(sim_y[-1] )*C_m3))*self.dt
             sim_y = np.append(sim_y, new_y)
 
         objective = 0
@@ -82,18 +88,33 @@ class Listener(Node):
         opt_vars = cs.vertcat(C_m1, C_m2, C_m3)
 
         nlp = {'x': opt_vars, 'f': objective}
-        opts = {'ipopt.print_level': 0, 'print_time':0}
+        opts = {'ipopt.print_level': 5, 'print_time':0}
         solver = cs.nlpsol('solver', 'ipopt', nlp, opts)
 
-        x0 = np.array([0.0,0.0,0.0])
+        x0 = np.array([30,3.0,0.8])
         solution = solver(x0 = x0)
 
-        #plt.plot(x_data, y_data)
-        #plt.plot(R*np.cos(s), R*np.sin(s))
-        #plt.axis("equal")
-        #plt.show()
 
         print(f"solution (C_m1,C_m2, C_m3): {solution['x']}")
+        
+        self.C_m1 = solution['x'][0].full()[0]
+        self.C_m2 = solution['x'][1].full()[0]
+        self.C_m3 = solution['x'][2].full()[0]
+
+
+
+        plt.plot(np.arange(0,n_points), y_data)
+
+        sim_y = np.array([y_data[0]])
+
+        for i in range(n_points-1):
+            new_y = sim_y[-1] + (2/self.m*(self.C_m1*x_data[i]-self.C_m2*sim_y[-1] -cs.sign(sim_y[-1] )*self.C_m3))*self.dt
+            sim_y = np.append(sim_y, new_y)
+
+        plt.plot(np.arange(0,n_points), sim_y)
+        plt.show()
+        
+
         
 
 def drivetrain_interpolate(data):
@@ -118,9 +139,6 @@ def main():
     print('Hi from param_estimator.')
     rclpy.init()
     listener = Listener()
-
-    delta_ref = 0
-
     data = np.array([])
 
 
@@ -136,14 +154,16 @@ def main():
                 print("spin started")
                 rclpy.spin(listener)
             except Exception as e:  
-                pass
+                print(e)
+                command = input()
+                continue
 
             try:
                 new_data = np.array([listener.C_m1, listener.C_m2, listener.C_m3])
                 data = np.append(data, np.reshape(new_data, (-1,1)), axis = 1)
-            except:
-                new_data = np.array([delta_ref, cs.arcsin(l/listener.R)])
-                data = np.reshape(new_data, (-1,1))
+                pass
+            except Exception as e:
+                print(e)
         elif command == "exit":
             break
         elif command == "set_duration":
@@ -156,6 +176,8 @@ def main():
             plt.plot(data[0,:], data[1,:], 'o')
             print(data)
             plt.show()
+        elif command == "set_d":
+            listener.d = float(input("Enter motor reference, d:\t"))
         elif command == "interpolate":
             C_m1, C_m2, C_m3 = listener.interpolate(data)
             print(f"solution C_m1: {C_m1}\tC_m2: {C_m2}\tC_m3: {C_m3}")
