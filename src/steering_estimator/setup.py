@@ -1,6 +1,6 @@
 from setuptools import find_packages, setup
 
-package_name = 'param_estimator'
+package_name = 'steering_estimator'
 
 setup(
     name=package_name,
@@ -13,14 +13,14 @@ setup(
     ],
     install_requires=['setuptools'],
     zip_safe=True,
-    maintainer='aimotion-laptop-i9',
-    maintainer_email='aimotionlab.sztaki@gmail.com',
+    maintainer='bodlaire',
+    maintainer_email='bodabenedek03@gmail.com',
     description='TODO: Package description',
     license='TODO: License declaration',
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'param_estimator = param_estimator.param_estimator:main'
+            'steering_estimator = steering_estimator.steering_estimator:main'
         ],
     },
 )
